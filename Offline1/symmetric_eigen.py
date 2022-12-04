@@ -18,7 +18,7 @@ print("The eigenvalues are:\n",eigenvalues)
 print("The eigenvectors are:\n",eigenvectors)
 
 #Reconstruct A from eigenvalue and eigenvectors 
-B_reconstructed = eigenvectors.dot(np.diag(eigenvalues)).dot(np.linalg.inv(eigenvectors))
+B_reconstructed = eigenvectors.dot(np.diag(eigenvalues)).dot(eigenvectors.T)
 print("The reconstructed matrix is:\n",B_reconstructed)
 
 #checking if the reconstructed matrix is equal to the original matrix
