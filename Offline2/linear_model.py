@@ -44,16 +44,17 @@ class LogisticRegression:
                 theta1=self.theta
 
         self.theta=theta1
+        return self.theta,self.bias
 
 
 
-    def predict(self, X):
+    def predict(self, X,theta,bias):
         """
         function for predicting labels of for all datapoint in X
         :param X:
         :return:
         """
         # todo: implement
-        y_pred=self.sigmoid(X,self.theta,self.bias)
+        y_pred=self.sigmoid(X,theta,bias)
         y_pred=np.where(y_pred>0.5,1,0)
         return y_pred
