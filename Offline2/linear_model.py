@@ -26,8 +26,7 @@ class LogisticRegression:
         self.rows,self.cols=X.shape
         self.theta=np.zeros(self.cols)
         self.bias=0
-        theta1=self.theta
-        min_cost=99999999
+        
 
         #gradient descent
         for i in range(self.iteration):
@@ -36,14 +35,9 @@ class LogisticRegression:
             db=(1/self.rows)*np.sum(y_pred-self.y)
             self.theta-=self.learning_rate*dw
             self.bias-=self.learning_rate*db
-            #cost function
-            cost=-(1/self.rows)*np.sum(self.y*np.log(y_pred)+(1-self.y)*np.log(1-y_pred))
-            #taking track of minimum cost
-            if cost>min_cost:
-                min_cost=cost
-                theta1=self.theta
+            
+           
 
-        self.theta=theta1
         return self.theta,self.bias
 
 

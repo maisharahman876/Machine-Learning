@@ -53,12 +53,12 @@ def bagging_sampler(X, y):
     :return:
     """
     # todo: implement
-    X_sample, y_sample = None, None
-    assert X_sample.shape == X.shape
-    assert y_sample.shape == y.shape
     size = X.shape[0]
     #numpy random sample array with duplicate
     index = np.random.randint(0, size, size)
     X_sample = X[index]
     y_sample = y[index]
+    assert X_sample.shape == X.shape
+    assert y_sample.shape == y.shape
+    
     return X_sample, y_sample

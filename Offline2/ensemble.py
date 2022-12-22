@@ -42,7 +42,8 @@ class BaggingClassifier:
         #predict with all the estimators and take majority vote
         y_pred = []
         for i in range(self.n_estimator):
-            y_pred.append(self.estimators[i].predict(X))
+            theta,bias=self.estimators[i]
+            y_pred.append(self.base_estimator.predict(X,theta,bias))
         y_pred = np.array(y_pred)
         y_pred = np.sum(y_pred, axis=0)
         y_pred = np.where(y_pred > self.n_estimator/2, 1, 0)
