@@ -2,7 +2,7 @@ import numpy as np
 from scipy.stats import multivariate_normal
 from matplotlib import pyplot as plt
 class GMM:
-    def __init__(self, k, max_iter=30):
+    def __init__(self, k, max_iter=1000):
         self.k = k
         self.max_iter = int(max_iter)
 
@@ -43,17 +43,22 @@ class GMM:
 
     def fit(self, X, plot_steps=False):
         self.initialize(X)
+        self.log_likelihood=self.calculate_log_likelihood(X)
         if plot_steps:
             plt.ion()
             self.fig, self.ax = plt.subplots()
-            scatter = self.ax.scatter(X[:, 0], X[:, 1])
-
         # Iterate between E-Step and M-Step until convergence
         for _ in range(self.max_iter):
+            
             self.e_step(X)
             #print(self.weights)
             self.m_step(X)
+            log_likelihood=self.calculate_log_likelihood(X)
+            #check if log_likelihood has converged
+            
+            
             if plot_steps:
+                scatter = self.ax.scatter(X[:, 0], X[:, 1])
                 for mean, cov in zip(self.mu, self.sigma):
                     x, y = np.mgrid[min(X[:, 0]):max(X[:, 0]):.01, min(X[:, 1]):max(X[:, 1]):.01]
                     pos = np.empty(x.shape + (2,))
@@ -63,6 +68,12 @@ class GMM:
                 # Update the data in the scatter plot
                 scatter.set_offsets(X)
                 plt.pause(0.05)
+            if abs(log_likelihood-self.log_likelihood)<1e-3:
+                break
+            self.log_likelihood=log_likelihood
+            if plot_steps:
+                self.ax.clear()
+       
 
             
     def probability(self, X):

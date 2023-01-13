@@ -12,8 +12,17 @@ if __name__ == '__main__':
         log_likelihoods.append([k,gmm.calculate_log_likelihood(X)])
     #plot a graph where x axis is log_likelihoods[i][0] and y axis is log_likelihoods[i][1] and save it as a png file
     plt.plot([log_likelihoods[i][0] for i in range(len(log_likelihoods))],[log_likelihoods[i][1] for i in range(len(log_likelihoods))])
+    plt.xlabel('no. of clusters')
+    plt.ylabel('log_likelihood')
+    #plot scatter plot of log_likelihoods
+    plt.scatter([log_likelihoods[i][0] for i in range(len(log_likelihoods))],[log_likelihoods[i][1] for i in range(len(log_likelihoods))])
+
     plt.savefig('log_likelihoods.png')
+    plt.clf()
+    #find the best k from log_likelihoods
+    best_k=int(input("Enter the best k from the graph:"))
     
-    gmm=GMM(k=3)
+    gmm=GMM(k=best_k)
     gmm.fit(X,plot_steps=True)
-    plt.savefig('gmm.gif', dpi=100, bbox_inches='tight')
+    plt.savefig('best_k.png')
+    
