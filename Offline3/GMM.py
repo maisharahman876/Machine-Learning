@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.stats import multivariate_normal
 from matplotlib import pyplot as plt
+from sklearn.decomposition import PCA
 class GMM:
     def __init__(self, k, max_iter=1000):
         self.k = k
@@ -58,21 +59,32 @@ class GMM:
             
             
             if plot_steps:
+                self.ax.clear()
+                if self.m > 2:
+                    pca = PCA(n_components=2)
+                    X_ = pca.fit_transform(X)
+                else:
+                    X_ = X
                 scatter = self.ax.scatter(X[:, 0], X[:, 1])
                 for mean, cov in zip(self.mu, self.sigma):
-                    x, y = np.mgrid[min(X[:, 0]):max(X[:, 0]):.01, min(X[:, 1]):max(X[:, 1]):.01]
+                    x, y = np.mgrid[min(X_[:, 0]):max(X_[:, 0]):.01, min(X_[:, 1]):max(X_[:, 1]):.01]
                     pos = np.empty(x.shape + (2,))
                     pos[:, :, 0] = x; pos[:, :, 1] = y
-                    rv = multivariate_normal(mean, cov)
+                    if self.m > 2:
+                        V=pca.components_
+                        means=pca.mean_
+                        rv=multivariate_normal(V.dot(mean-means), V.dot(cov.dot(V.T)))
+                    else:
+                        rv = multivariate_normal(mean, cov)
                     self.ax.contour(x, y, rv.pdf(pos))
                 # Update the data in the scatter plot
-                scatter.set_offsets(X)
+                scatter.set_offsets(X_)
                 plt.pause(0.05)
             if abs(log_likelihood-self.log_likelihood)<1e-3:
                 break
             self.log_likelihood=log_likelihood
-            if plot_steps:
-                self.ax.clear()
+            
+                
        
 
             

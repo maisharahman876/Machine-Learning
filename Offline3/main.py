@@ -1,7 +1,9 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+
 from GMM import GMM
+
 if __name__ == '__main__':
     data = pd.read_csv('data2D.txt.dat', sep=' ', header=None)
     X=data.values
@@ -21,6 +23,7 @@ if __name__ == '__main__':
     plt.clf()
     #find the best k from log_likelihoods
     best_k=int(input("Enter the best k from the graph:"))
+
     
     gmm=GMM(k=best_k)
     gmm.fit(X,plot_steps=True)
