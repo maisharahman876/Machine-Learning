@@ -1,7 +1,9 @@
 import numpy as np
-from scipy.stats import multivariate_normal
 from matplotlib import pyplot as plt
+from scipy.stats import multivariate_normal
 from sklearn.decomposition import PCA
+
+
 class GMM:
     def __init__(self, k, max_iter=1000):
         self.k = k

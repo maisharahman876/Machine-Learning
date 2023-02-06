@@ -5,7 +5,7 @@ import pandas as pd
 from GMM import GMM
 
 if __name__ == '__main__':
-    data = pd.read_csv('data2D.txt.dat', sep=' ', header=None)
+    data = pd.read_csv('data2D(1).txt', sep=' ', header=None)
     X=data.values
     log_likelihoods = []
     for k in range(1, 11):
