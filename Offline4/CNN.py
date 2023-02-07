@@ -1,5 +1,18 @@
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
+from tqdm import tqdm
+def getWindows(output_size,input_data, kernel_size, stride=1, padding=0, dilation=0):
+    input_=input_data
+    batch_size, channels, height, width = input_data.shape
+    _, _, output_height, output_width = output_size
+    if dilation != 0:
+        input_ = np.insert(input_, range(1, input_data.shape[2]), 0, axis=2)
+        input_ = np.insert(input_, range(1, input_data.shape[3]), 0, axis=3)
+    # add padding to the input data
+    padded_input = np.pad(input_, ((0, 0), (0, 0), (padding, padding), (padding, padding)), 'constant')
+    batch_stride, channel_stride, height_stride, width_stride = padded_input.strides
+    return np.lib.stride_tricks.as_strided(padded_input, shape=(batch_size, channels, output_height, output_width, kernel_size, kernel_size), strides=(batch_stride, channel_stride, stride * height_stride, stride * width_stride, height_stride, width_stride))
+
 
 class Convolution2D:
     def __init__(self, no_of_filters,kernel_size, stride=1, padding=0):
@@ -10,30 +23,47 @@ class Convolution2D:
         #calculate the filters using Xavier initialization
         self.filters = None
         self.biases = None
+    
     def forward(self, input_data):
         self.input_data = input_data
-        batch_size, height, width,channels = input_data.shape
+        batch_size,channels, height, width = input_data.shape
 
         if self.filters is None:
-            self.filters = np.random.randn(self.kernel_size, self.kernel_size, channels, self.no_of_filters) * np.sqrt(1 / (self.kernel_size * self.kernel_size * channels))
+            #initialize by Xavier initialization
+            self.filters = np.random.randn(self.no_of_filters,channels, self.kernel_size, self.kernel_size) * np.sqrt(2 / (self.kernel_size * self.kernel_size * channels))
+            
             self.biases = np.zeros(self.no_of_filters)
 
         output_height = (height - self.kernel_size + 2 * self.padding) // self.stride + 1
         output_width = (width - self.kernel_size + 2 * self.padding) // self.stride + 1
-        output = np.zeros((batch_size, output_height, output_width,self.no_of_filters))
-        input_data = np.pad(input_data, ((0, 0), (self.padding, self.padding), (self.padding, self.padding), (0, 0)), 'constant')
+        output=np.zeros((batch_size, self.no_of_filters, output_height, output_width))
+        #input_data = np.pad(input_data, ((0, 0), (self.padding, self.padding), (self.padding, self.padding), (0, 0)), 'constant')
+        windows=getWindows(output.shape,input_data, self.kernel_size, self.stride, self.padding)
+        
+        output = np.einsum('bihwkl,oikl->bohw', windows, self.filters)
 
-
-        for k in range(batch_size):
-            for l in range(self.no_of_filters):
-                for i in range(output_height):
-                    for j in range(output_width):
-                        output[k, i, j, l] = np.sum(self.input_data[k, i * self.stride:i * self.stride + self.kernel_size, j * self.stride:j * self.stride + self.kernel_size, :] * self.filters[:, :, :, l]) + self.biases[l]
-        #print(output)
+        # add bias to kernels
+        output += self.biases[None, :, None, None]
+        #print("output shape",output.shape)
+        
+        
+        self.windows=windows
+        
         return output
     def backward(self, dL_dout,learning_rate):
        ##
-        print("baaaaaal ta pore korum") 
+        padding = self.kernel_size - 1 if self.padding == 0 else self.padding
+
+        dout_windows = getWindows(self.input_data.shape,dL_dout, self.kernel_size, padding=padding, stride=1, dilation=self.stride - 1)
+        rot_kern = np.rot90(self.filters, 2, axes=(2, 3))
+
+        db = np.sum(dL_dout, axis=(0, 2, 3))
+        dw = np.einsum('bihwkl,bohw->oikl', self.windows, dL_dout)
+        dx = np.einsum('bohwkl,oikl->bihw', dout_windows, rot_kern)
+        # update weights and biases
+        self.filters -= learning_rate * dw
+        self.biases -= learning_rate * db
+        return dx
     def save_weights(self):
        self.filters_matrix = self.filters
        self.biases_matrix = self.biases
@@ -55,28 +85,30 @@ class MaxPooling2D:
         self.pool_size = pool_size
         self.stride = stride
     def forward(self,x):
-        batch_size, height, width, channels = x.shape
-        self.input_shape=x.shape
+        self.input_shape = x.shape
+        batch_size,channels, height, width = x.shape
         output_height = (height - self.pool_size) // self.stride + 1
         output_width = (width - self.pool_size) // self.stride + 1
-        out=np.zeros((batch_size, output_height, output_width, channels))
-        self.out_map=np.zeros((batch_size, output_height, output_width, channels)).astype(np.int32)
-        for k in range(batch_size):
-            for l in range(channels):
-                for i in range(output_height):
-                    for j in range(output_width):
-                        out[k, i, j, l] = np.max(x[k, i * self.stride: i * self.stride + self.pool_size, j * self.stride: j * self.stride + self.pool_size, l])
-                        self.out_map[k, i, j, l] = np.argmax(x[k, i * self.stride: i * self.stride + self.pool_size, j * self.stride: j * self.stride + self.pool_size, l])
-        return out
+        output=np.zeros((batch_size, channels, output_height, output_width))
+        windows=getWindows(output.shape,x, self.pool_size, self.stride)
+        #take the max value of each window
+        output = np.amax(windows, axis=(4, 5))
+        self.windows=windows
+        return output
     def backward(self,d_out):
-        batch_size, height, width, channels = d_out.shape
-        d_x=np.zeros(self.input_shape)
+        d_x = np.zeros(self.input_shape)
+        batch_size,channels, height, width = self.input_shape
+        output_height = (height - self.pool_size) // self.stride + 1
+        output_width = (width - self.pool_size) // self.stride + 1
+        for i in range(batch_size):
+            for j in range(channels):
+                for k in range(output_height):
+                    for l in range(output_width):
+                        #find the index of the max value in the window
+                        (a, b) = np.unravel_index(self.windows[i, j, k, l].argmax(), self.windows[i, j, k, l].shape)
+                        d_x[i, j, k * self.stride + a, l * self.stride + b] = d_out[i, j, k, l]
+        
 
-        for k in range(batch_size):
-            for l in range(channels):
-                for i in range(height):
-                    for j in range(width):
-                        d_x[k, i * self.stride: i * self.stride + self.pool_size, j * self.stride: j * self.stride + self.pool_size, l][np.unravel_index(self.out_map[k, i, j, l], (self.pool_size, self.pool_size))]+=d_out[k, i, j, l]
         return d_x
 class Flatten:
     def forward(self, input_data):
@@ -101,7 +133,7 @@ class FullyConnected:
         self.input_data = input_data
         self.output_data = np.dot(input_data, self.weights) + self.biases
         return self.output_data
-    def backward(self, d_out, learning_rate=0.01):
+    def backward(self, d_out, learning_rate):
         self.d_weights = np.dot(self.input_data.T, d_out)
         self.d_biases = np.sum(d_out, axis=0)
         self.weights -= learning_rate * self.d_weights
@@ -114,10 +146,79 @@ class FullyConnected:
 class Softmax:
     def forward(self, input_data):
         self.input_data = input_data
-        exp_values = np.exp(input_data - np.max(input_data, axis=1, keepdims=True))
+        exp_values = np.exp(input_data-np.max(input_data, axis=1, keepdims=True))
         probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
         self.output_data = probabilities
         return probabilities
-    def backward(self, d_out):
-        d_input = d_out.copy()
-        return d_input
+class LeNet:
+    def __init__(self, config):
+        self.learning_rate = config['learning_rate']
+        self.convolution_layer1 = Convolution2D(6, 5)
+        self.max_pooling_layer1 = MaxPooling2D(2, 2)
+        self.convolution_layer2 = Convolution2D(16, 5)
+        self.max_pooling_layer2 = MaxPooling2D(2, 2)
+        self.relu1 = RELU()
+        self.relu2 = RELU()
+        self.flatten_layer = Flatten()
+        # Fully connected layer with 10 neurons
+        self.fc1 = FullyConnected(120)
+        self.fc2 = FullyConnected(84)
+        self.fc3 = FullyConnected(10)
+        self.softmax = Softmax()
+    def forward(self, input):
+        #first convolution layer
+        output = self.convolution_layer1.forward(input)
+        output = self.relu1.forward(output)
+        output = self.max_pooling_layer1.forward(output)
+        #second convolution layer
+        output = self.convolution_layer2.forward(output)
+        output = self.relu2.forward(output)
+        output = self.max_pooling_layer2.forward(output)
+        #flatten layer
+        output = self.flatten_layer.forward(output)
+        #first fully connected layer
+        output = self.fc1.forward(output)
+        #second fully connected layer
+        output = self.fc2.forward(output)
+        #third fully connected layer
+        output = self.fc3.forward(output)
+        #softmax layer
+        output = self.softmax.forward(output)
+        return output
+    def backward(self, delta):
+        delta = self.fc3.backward(delta, self.learning_rate)
+        delta = self.fc2.backward(delta, self.learning_rate)
+        delta = self.fc1.backward(delta, self.learning_rate)
+        
+        delta = self.flatten_layer.backward(delta)
+        delta = self.max_pooling_layer2.backward(delta)
+        delta = self.relu2.backward(delta)
+        delta = self.convolution_layer2.backward(delta, self.learning_rate)
+
+        delta = self.max_pooling_layer1.backward(delta)
+        delta = self.relu1.backward(delta)
+        delta = self.convolution_layer1.backward(delta, self.learning_rate)
+        return delta
+    def train(self, image_batches, y_true_batches):
+        for i,j in tqdm(zip(image_batches,y_true_batches)):
+            # print(i.shape)
+            i=np.array(i)
+            j=np.array(j)
+            i = np.expand_dims(i, axis=1)
+            output = self.forward(i)
+            delta=output-j
+            self.backward(delta)
+            
+            
+            
+        
+    def predict(self, image):
+
+        image = np.expand_dims(image, axis=1)
+        #print (image.shape)
+        output = self.forward(image)
+        #convert output to one-hot encoding with the highest probability
+        
+        output = np.eye(10)[np.argmax(output, axis=1)]
+        
+        return output
