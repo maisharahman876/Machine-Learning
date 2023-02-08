@@ -1,13 +1,16 @@
+import os
 import pickle
+
+import cv2
 import numpy as np
 import pandas as pd
-import cv2
-import os
 # Load the model object from disk
+from tqdm import tqdm
+from sklearn.metrics import f1_score, accuracy_score
 
 def read_images(folder_path):
     images = []
-    for filename in os.listdir(folder_path):
+    for filename in tqdm(os.listdir(folder_path)):
         img = cv2.imread(os.path.join(folder_path, filename), cv2.IMREAD_GRAYSCALE)
         # Invert the grayscale image
         gray = cv2.bitwise_not(img)
@@ -16,17 +19,20 @@ def read_images(folder_path):
         # Normalize the pixel values between 0 and 1
         img = thresh / 255
         # Resize the image to 28x28 pixels
-        img = cv2.resize(img, (128, 128))
+        img = cv2.resize(img, (28, 28))
+        kernel = np.ones((2,2),np.uint8)
+        img = cv2.dilate(img,kernel,iterations = 1)
         if img is not None:
             images.append(img)
     return images
 if __name__=="__main__":
     #load data
-    training_path = "E:\\4-2\\training-b"
+    training_path = "E:\\4-2\\training-d"
     batch_size = 1
+    print ("Reading images...")
     images = read_images(training_path)
     #read output csv file and get y_true value
-    df = pd.read_csv("E:\\4-2\\training-b.csv")
+    df = pd.read_csv("E:\\4-2\\training-d.csv")
     y_true = df['digit'].values
     
     #convert y_true to one hot encoding
@@ -35,15 +41,17 @@ if __name__=="__main__":
         model = pickle.load(file)
     #predict output images by model with batch size 1
     y_pred = []
-    for i in range(len(images)):
-        y_pred.append(model.predict(np.array([images[i]])))
+    print("Predicting ...")
+    for i in tqdm(range(len(images))):
+        y_pred_encoded,y_pred_prob=model.predict(np.array([images[i]]))
+        y_pred.append(y_pred_encoded)
        
     y_pred = np.array(y_pred)
     y_pred = y_pred.reshape(y_pred.shape[0], y_pred.shape[2])
 
-      
-    print(y_pred.shape, y_true.shape)
-    #calculate accuracy
-    accuracy = np.sum(np.argmax(y_pred, axis=1) == np.argmax(y_true, axis=1)) / y_true.shape[0]
+    #calculate accuracy and f1 score
+    accuracy = accuracy_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred, average='macro')
     print("Accuracy: ", accuracy)
+    print("F1 score: ", f1)
 
