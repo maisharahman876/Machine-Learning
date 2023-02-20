@@ -1,12 +1,18 @@
+
 import numpy as np
-from numpy.lib.stride_tricks import as_strided
+import pickle
+import pandas as pd
 from tqdm import tqdm
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss,accuracy_score,f1_score,confusion_matrix
+import cv2
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 def getWindows(output_size,input_data, kernel_size, stride=1, padding=0, dilation=0):
     input_=input_data
     batch_size, channels, height, width = input_data.shape
     _, _, output_height, output_width = output_size
-
+    
     if dilation != 0:
         input_ = np.insert(input_, range(1, input_data.shape[2]), 0, axis=2)
         input_ = np.insert(input_, range(1, input_data.shape[3]), 0, axis=3)
@@ -67,10 +73,6 @@ class Convolution2D:
         self.filters -= learning_rate * dw
         self.biases -= learning_rate * db
         return dx
-    def save_weights(self):
-       self.filters_matrix = self.filters
-       self.biases_matrix = self.biases
-      
 class RELU:
     def forward(self, input_data):
         self.input_data = input_data
@@ -101,21 +103,18 @@ class MaxPooling2D:
         self.output_list=output
 
         return output
-    def backward(self, d_z):
+    def backward(self, d_out):
 
-        d_x= np.zeros(self.input.shape)
+        d_input= np.zeros(self.input.shape)
       
         for i in range(0,self.pool_size):
             for j in range(0,self.pool_size):
-                sliced=self.input[:, :, i:i+d_z.shape[2]*self.stride:self.stride, j:j+d_z.shape[3]*self.stride:self.stride]
+                sliced=self.input[:, :, i:i+d_out.shape[2]*self.stride:self.stride, j:j+d_out.shape[3]*self.stride:self.stride]
                 # print('sliced shape: ',sliced.shape)
                 mask=(sliced == self.output_list)
-                d_x[:, :, i:i+d_z.shape[2]*self.stride:self.stride, j:j+d_z.shape[3]*self.stride:self.stride]+=mask*d_z
-        return d_x
-                
-                
-
-       
+                d_input[:, :, i:i+d_out.shape[2]*self.stride:self.stride, j:j+d_out.shape[3]*self.stride:self.stride]+=mask*d_out
+        return d_input
+                     
 class Flatten:
     def forward(self, input_data):
         self.input_data = input_data
@@ -147,9 +146,7 @@ class FullyConnected:
         self.biases -= learning_rate * self.d_biases
         d_input = np.dot(d_out, self.weights.T)
         return d_input
-    def save_weights(self):
-        self.weight_matrix=np.copy(self.weights)
-        self.bias_matrix=np.copy(self.biases)
+    
 class Softmax:
     def forward(self, input_data):
         self.input_data = input_data
@@ -224,8 +221,7 @@ class LeNet:
             delta=output-j
             self.backward(delta)
 
-        return y_preds,y_true        
-        
+        return y_preds,y_true
     def predict(self, image):
 
         image = np.expand_dims(image, axis=1)
@@ -235,3 +231,147 @@ class LeNet:
         #convert output to one-hot encoding with the highest probability of 10 neurons
         output = np.eye(10)[np.argmax(output, axis=1)]
         return output, probabilities
+def read_images(folder_path):
+    images = []
+    for filename in tqdm(os.listdir(folder_path)):
+        # read only png images
+        if not filename.endswith('.png'):
+            continue
+        img = cv2.imread(os.path.join(folder_path, filename), cv2.IMREAD_GRAYSCALE)
+        # Invert the grayscale image
+        gray = cv2.bitwise_not(img)
+        # Convert the image to binary using a threshold
+        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        # Normalize the pixel values between 0 and 1
+        img = thresh / 255.0
+        # Resize the image to 28x28 pixels
+        img = cv2.resize(img, (28, 28))
+        #dilate image using cv2.dilate
+        kernel = np.ones((2,2),np.uint8)
+        img = cv2.dilate(img,kernel,iterations = 1)
+        if img is not None:
+            images.append(img)
+    return images
+if __name__ == '__main__':
+    validation_ratio = 0.2
+    #load data
+    training_path1 = "E:\\4-2\\training-a"
+    training_path2 = "E:\\4-2\\training-b"
+    training_path3 = "E:\\4-2\\training-c"
+    batch_size = 32
+    print("Reading images...")
+
+    images = read_images(training_path1)
+    split_index = int(len(images) * (1 - validation_ratio))
+    training_images = images[:split_index]
+    validation_images = images[split_index:]
+
+    df = pd.read_csv('E:\\4-2\\training-a.csv')
+    y_true = df['digit'].values
+    training_y_true = y_true[:split_index]
+    validation_y_true = y_true[split_index:]
+
+    images = read_images(training_path2)
+    split_index = int(len(images) * (1 - validation_ratio))
+    training_images = training_images + images[:split_index]
+    validation_images = validation_images + images[split_index:]
+    df = pd.read_csv('E:\\4-2\\training-b.csv')
+    y_true = df['digit'].values
+    y_true=np.array(y_true)
+    training_y_true=np.append(training_y_true,y_true[:split_index])
+    validation_y_true = np.append(validation_y_true,y_true[split_index:])
+
+
+    images = read_images(training_path3)
+    split_index = int(len(images) * (1 - validation_ratio))
+    training_images = training_images + images[:split_index]
+    validation_images = validation_images + images[split_index:]
+    df = pd.read_csv('E:\\4-2\\training-c.csv')
+    y_true = df['digit'].values
+    y_true=np.array(y_true)
+    training_y_true=np.append(training_y_true,y_true[:split_index])
+    validation_y_true = np.append(validation_y_true,y_true[split_index:])
+
+    training_y_true = np.eye(10)[training_y_true.astype(int)]
+    validation_y_true = np.eye(10)[validation_y_true.astype(int)]
+    #print("validation y true",validation_y_true.shape)
+
+    num_batches = len(training_images) // batch_size
+    image_batches = [training_images[i*batch_size : (i+1)*batch_size] for i in range(num_batches)]
+    y_true_batches = [training_y_true[i*batch_size : (i+1)*batch_size] for i in range(num_batches)]
+    y_true_batches = np.array(y_true_batches)
+
+    model=LeNet({ 'learning_rate': 0.0005})
+
+    print("Training ...")
+    y_true_all=np.array([])
+    y_pred_all=np.array([])
+    training_loss=[]
+    validation_loss=[]
+    validation_accuracy=[]
+    validation_f1=[]
+    for i in range(1,31):
+        try:
+            print("Epoch: ", i)
+            yp,yt=model.train(image_batches, y_true_batches)
+            y_true_all=np.append(y_true_all,yt)
+            y_pred_all=np.append(y_pred_all,yp)
+            training_loss.append(log_loss(y_true_all, y_pred_all))
+            print("Training Loss: ", log_loss(y_true_all, y_pred_all))
+            print("Validating ...")
+            y_pred_val_all=[]
+            for j in range(len(validation_images)):
+                y_pred_encoded,y_pred_prob=model.predict(np.array([validation_images[j]]))
+                y_pred_val_all.append(y_pred_prob[0])
+
+        #print(np.array(y_pred_val_all))
+            print("Validation Loss: ", log_loss(validation_y_true, y_pred_val_all))
+            print("Validation Accuracy: ", accuracy_score(validation_y_true.argmax(axis=1), np.array(y_pred_val_all).argmax(axis=1)))
+            print("Validation F1 Score: ", f1_score(validation_y_true.argmax(axis=1), np.array(y_pred_val_all).argmax(axis=1), average='macro'))
+            # #save model
+            with open('model'+'_e'+str(i)+'.pkl', 'wb') as f:
+                pickle.dump(model, f)
+            validation_loss.append(log_loss(validation_y_true, y_pred_val_all))
+            validation_accuracy.append(accuracy_score(validation_y_true.argmax(axis=1), np.array(y_pred_val_all).argmax(axis=1)))
+            validation_f1.append(f1_score(validation_y_true.argmax(axis=1), np.array(y_pred_val_all).argmax(axis=1), average='macro'))
+        except :
+            break
+
+    #plot 4 graphs for training, validation loss, accuracy and f1 score with respect to epochs
+   
+    plt.plot(training_loss)
+    plt.title('Training Loss with Learning Rate '+str(0.0005))
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    
+    plt.savefig('training_loss.png')
+    plt.clf()
+
+    plt.plot(validation_loss)
+    plt.title('Validation Loss with Learning Rate '+str(0.0005))
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.savefig('validation_loss.png')
+    plt.clf()
+    plt.plot(validation_accuracy)
+    plt.title('Validation Accuracy with Learning Rate '+str(0.0005))
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.savefig('validation_accuracy.png')
+    plt.clf()
+
+    plt.plot(validation_f1)
+    plt.title('Validation F1 Score with Learning Rate '+str(0.0005))
+    plt.xlabel('Epochs')
+    plt.ylabel('F1 Score')
+    plt.savefig('validation_f1.png')
+    plt.clf()
+    cm = confusion_matrix(np.array(validation_y_true).argmax(axis=1),np.array( y_pred_val_all).argmax(axis=1))
+    sns.heatmap(cm, annot=True, fmt='d')
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.savefig('confusion_matrix.png')
+    
+
+
+
